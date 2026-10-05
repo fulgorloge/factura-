@@ -1,13 +1,3 @@
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.static('public'));
-
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
-
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -20,19 +10,25 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const prisma = new PrismaClient();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
+
+// Inicialización de Stripe (verifica que la variable de entorno exista)
+const stripe = process.env.STRIPE_SECRET_KEY 
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' })
+  : null;
 
 // 1. Configuración de CORS
 app.use(cors());
 
 // 2. Webhook de Stripe
-// IMPORTANTE: Debe ir antes de express.json() para procesar el body raw y verificar la firma
+// DEBE IR ANTES de express.json() para procesar el body de forma directa
 app.post(
   '/api/webhooks/stripe',
   express.raw({ type: 'application/json' }),
   async (req, res) => {
+    if (!stripe) {
+      return res.status(500).send('Stripe no está configurado correctamente.');
+    }
+
     const sig = req.headers['stripe-signature'];
     let event;
 
@@ -47,13 +43,11 @@ app.post(
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    // Procesamiento de eventos de facturación y pago
     switch (event.type) {
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object;
         console.log(`Pago recibido para Intent: ${paymentIntent.id}`);
         
-        // Actualizar estado en la base de datos
         await prisma.invoice.updateMany({
           where: { stripePaymentIntentId: paymentIntent.id },
           data: { status: 'PAID' },
@@ -73,7 +67,7 @@ app.post(
   }
 );
 
-// 3. Middlewares para parseo de JSON y formularios
+// 3. Middlewares para parseo de JSON y datos de formularios
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -87,7 +81,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Crear intención de pago / Registro de factura
 app.post('/api/invoices/create', async (req, res) => {
   try {
-    const { amount, currency = 'usd', customerId, description, items } = req.body;
+    const { amount, currency = 'usd', customerId, description } = req.body;
 
     if (!amount || Number(amount) <= 0) {
       return res.status(400).json({ 
@@ -96,9 +90,16 @@ app.post('/api/invoices/create', async (req, res) => {
       });
     }
 
+    if (!stripe) {
+      return res.status(500).json({
+        success: false,
+        error: 'Clave de Stripe no configurada en las variables de entorno.',
+      });
+    }
+
     // Crear Intent en Stripe
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(Number(amount) * 100), // En centavos
+      amount: Math.round(Number(amount) * 100),
       currency: currency.toLowerCase(),
       description: description || 'Factura de servicio',
       metadata: { customerId: customerId || 'guest' },
@@ -146,7 +147,7 @@ app.get('/api/invoices', async (req, res) => {
   }
 });
 
-// 5. Captura genérica (Fallback para Single Page Application)
+// 5. Captura genérica (Fallback para SPA / HTML principal)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
