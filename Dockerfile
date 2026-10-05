@@ -1,10 +1,8 @@
 FROM node:18-alpine
 WORKDIR /app
 COPY package*.json ./
-
-# Cambia "RUN npm install" por esto:
 RUN npm install
-
 COPY . .
+RUN npx prisma generate
 EXPOSE 3000
 CMD ["node", "server.js"]
