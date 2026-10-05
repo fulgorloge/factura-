@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Cambia "RUN npm install" por esto:
-RUN npm install --legacy-peer-deps
+RUN npm install
 
 COPY . .
 EXPOSE 3000
