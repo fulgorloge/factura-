@@ -16,6 +16,12 @@
             .no-print { display: none !important; }
             .print-only { display: block !important; }
             body { background: white; padding: 0; }
+            #invoiceCanvas {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                width: 100% !important;
+            }
         }
         .invoice-canvas {
             box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.07);
@@ -82,8 +88,14 @@
                     <span id="invoiceCount" class="text-xs bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full border border-indigo-100">0</span>
                 </div>
 
-                <div class="mb-3">
-                    <input type="text" placeholder="🔍 Buscar cliente o #..." oninput="renderInvoiceList(this.value)" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition">
+                <!-- Buscador y Filtro por Estado -->
+                <div class="grid grid-cols-3 gap-2 mb-3">
+                    <input type="text" id="invoiceSearchInput" placeholder="🔍 Buscar..." oninput="handleSearchAndFilter()" class="col-span-2 text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition">
+                    <select id="statusFilterSelect" onchange="handleSearchAndFilter()" class="col-span-1 text-xs bg-slate-50 font-semibold p-2.5 rounded-xl border border-slate-200 outline-none">
+                        <option value="ALL">Todas</option>
+                        <option value="Pendiente">⏳ Pend.</option>
+                        <option value="Pagada">✅ Pagadas</option>
+                    </select>
                 </div>
 
                 <div id="invoiceList" class="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -126,21 +138,37 @@
                 </form>
             </div>
 
-            <!-- Personalización de Marca -->
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80">
-                <h2 class="text-sm font-bold text-slate-800 mb-3">🎨 Personalización</h2>
-                <div class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Logo Negocio</label>
-                        <input type="file" id="logoUpload" accept="image/*" onchange="handleLogoUpload(event)" class="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+            <!-- Descuento y Personalización de Marca -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 space-y-4">
+                <h2 class="text-sm font-bold text-slate-800">🎨 Ajustes de Factura</h2>
+                
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Descuento Global ($)</label>
+                    <input type="number" id="invoiceDiscountInput" placeholder="0" min="0" oninput="updateDiscount(this.value)" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Logo Negocio</label>
+                    <input type="file" id="logoUpload" accept="image/*" onchange="handleLogoUpload(event)" class="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer w-full">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Color Principal</label>
+                    <div class="flex items-center gap-3">
+                        <input type="color" id="primaryColor" value="#4f46e5" onchange="updateThemeColor(this.value)" class="h-8 w-12 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+                        <span class="text-xs text-slate-400">Color del encabezado</span>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Color Principal</label>
-                        <div class="flex items-center gap-3">
-                            <input type="color" id="primaryColor" value="#4f46e5" onchange="updateThemeColor(this.value)" class="h-8 w-12 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
-                            <span class="text-xs text-slate-400">Personaliza los encabezados</span>
-                        </div>
-                    </div>
+                </div>
+
+                <!-- Respaldo de Seguridad -->
+                <div class="pt-3 border-t border-slate-100 flex gap-2">
+                    <button onclick="exportBackup()" class="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-xl text-xs font-bold transition">
+                        📥 Exportar JSON
+                    </button>
+                    <button onclick="triggerImportBackup()" class="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-xl text-xs font-bold transition">
+                        📤 Importar JSON
+                    </button>
+                    <input type="file" id="importJsonInput" accept=".json" onchange="importBackup(event)" class="hidden">
                 </div>
             </div>
         </aside>
@@ -177,6 +205,11 @@
                         📊 CSV
                     </button>
 
+                    <!-- Impresión Nativa -->
+                    <button onclick="printInvoice()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold transition">
+                        🖨️ Imprimir
+                    </button>
+
                     <!-- Descargar PDF -->
                     <button onclick="downloadPDF()" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
                         <span>📥</span> <span>PDF</span>
@@ -189,7 +222,7 @@
                 </div>
             </div>
 
-            <!-- Canvas de la Factura (Renderizable a PDF) -->
+            <!-- Canvas de la Factura (Renderizable a PDF / Imprimible) -->
             <div id="invoiceCanvas" class="invoice-canvas bg-white rounded-2xl p-6 sm:p-10 border border-slate-200/80 min-h-[750px] text-slate-700 flex flex-col justify-between relative overflow-hidden">
                 
                 <div>
@@ -269,6 +302,14 @@
                                 <span>Total Paseos:</span>
                                 <span id="totalCount" class="font-semibold text-slate-700">0</span>
                             </div>
+                            <div class="flex justify-between text-xs text-slate-500">
+                                <span>Subtotal:</span>
+                                <span id="subtotalAmount" class="font-semibold text-slate-700">$0</span>
+                            </div>
+                            <div id="discountRow" class="flex justify-between text-xs text-rose-600 font-semibold hidden">
+                                <span>Descuento:</span>
+                                <span id="discountAmount">-$0</span>
+                            </div>
                             <div class="flex justify-between text-base font-black text-slate-800 pt-2 border-t border-slate-100">
                                 <span>Total a Pagar:</span>
                                 <span id="totalAmount" class="text-indigo-600">$0</span>
@@ -295,7 +336,7 @@
         </div>
     </div>
 
-    <!-- CÓDIGO JAVASCRIPT COMPLETO -->
+    <!-- CÓDIGO JAVASCRIPT REPOTENCIADO -->
     <script>
         // ESTADO DE LA APLICACIÓN
         let invoices = JSON.parse(localStorage.getItem('petInvoices')) || [];
@@ -303,7 +344,7 @@
         let logoBase64 = localStorage.getItem('petLogo') || '';
         let themeColor = localStorage.getItem('petTheme') || '#4f46e5';
 
-        // INICIALIZACIÓN AL CARGAR LA PÁGINA
+        // INICIALIZACIÓN
         window.onload = () => {
             const walkDateInput = document.getElementById('walkDate');
             if (walkDateInput) walkDateInput.valueAsDate = new Date();
@@ -318,6 +359,7 @@
                 renderInvoiceList();
                 loadInvoice(activeInvoiceId);
             }
+            bindEditableFields();
             updateDashboardStats();
         };
 
@@ -325,6 +367,38 @@
         function saveToStorage() {
             localStorage.setItem('petInvoices', JSON.stringify(invoices));
             updateDashboardStats();
+        }
+
+        // SINCRONIZACIÓN DE CAMPOS CONTENTEDITABLE EN TIEMPO REAL
+        function bindEditableFields() {
+            const editables = [
+                { id: 'companyName', key: 'companyName' },
+                { id: 'companyTagline', key: 'companyTagline' },
+                { id: 'companyContact', key: 'companyContact' },
+                { id: 'invoiceNumber', key: 'number' },
+                { id: 'invoiceDate', key: 'date' },
+                { id: 'clientName', key: 'clientName' },
+                { id: 'clientPhone', key: 'clientPhone' },
+                { id: 'petNames', key: 'petNames' },
+                { id: 'servicePeriod', key: 'servicePeriod' },
+                { id: 'paymentNotes', key: 'paymentNotes' }
+            ];
+
+            editables.forEach(item => {
+                const el = document.getElementById(item.id);
+                if (el) {
+                    el.addEventListener('blur', () => {
+                        const inv = invoices.find(i => i.id === activeInvoiceId);
+                        if (inv) {
+                            inv[item.key] = el.innerText.trim();
+                            saveToStorage();
+                            if (item.key === 'clientName' || item.key === 'number') {
+                                handleSearchAndFilter();
+                            }
+                        }
+                    });
+                }
+            });
         }
 
         // 1. CREAR NUEVA FACTURA
@@ -338,10 +412,14 @@
                 date: todayStr,
                 status: 'Pendiente',
                 discount: 0,
+                companyName: "MASCOTAS CLUB",
+                companyTagline: "Servicio Profesional de Paseos y Cuidado",
+                companyContact: "Tel: +57 300 123 4567 | Medellín, Colombia",
                 clientName: defaultClient,
-                clientPhone: "3000000000",
-                petNames: defaultPet,
+                clientPhone: "Tel: +57 300 000 0000",
+                petNames: "🐶 " + defaultPet,
                 servicePeriod: "Periodo: " + new Date().toLocaleString('es-CO', { month: 'long', year: 'numeric' }),
+                paymentNotes: "<strong>Nequi / Bancolombia:</strong> 300 123 4567<br>¡Gracias por confiar en nuestro servicio! 🐾",
                 walks: [
                     { id: Date.now(), date: todayStr, pets: defaultPet, notes: "1 Hora Paseo Individual", price: 15000 }
                 ]
@@ -377,7 +455,13 @@
             showToast(`Factura duplicada como ${newId}`);
         }
 
-        // 3. RENDERIZAR LISTA Y FILTRO DE FACTURAS
+        // 3. RENDERIZAR LISTA CON BÚSQUEDA Y FILTROS
+        function handleSearchAndFilter() {
+            const searchTerm = document.getElementById('invoiceSearchInput').value;
+            const statusFilter = document.getElementById('statusFilterSelect').value;
+            renderInvoiceList(searchTerm, statusFilter);
+        }
+
         function renderInvoiceList(searchTerm = '', statusFilter = 'ALL') {
             const listEl = document.getElementById('invoiceList');
             if (!listEl) return;
@@ -395,7 +479,7 @@
 
             filtered.forEach(inv => {
                 const subtotal = inv.walks.reduce((sum, w) => sum + Number(w.price), 0);
-                const total = subtotal - (inv.discount || 0);
+                const total = Math.max(0, subtotal - (inv.discount || 0));
                 const isActive = inv.id === activeInvoiceId;
                 const isPaid = inv.status === 'Pagada';
 
@@ -431,20 +515,27 @@
 
             const setVal = (elemId, val) => {
                 const el = document.getElementById(elemId);
-                if (el) el.innerText = val;
+                if (el) el.innerHTML = val || '';
             };
 
             setVal('activeInvoiceName', inv.number);
             setVal('mobileActiveInvoice', inv.number);
+            setVal('companyName', inv.companyName || "MASCOTAS CLUB");
+            setVal('companyTagline', inv.companyTagline || "Servicio Profesional de Paseos y Cuidado");
+            setVal('companyContact', inv.companyContact || "Tel: +57 300 123 4567 | Medellín, Colombia");
             setVal('invoiceNumber', inv.number);
             setVal('invoiceDate', inv.date);
             setVal('clientName', inv.clientName);
             setVal('clientPhone', inv.clientPhone || '');
             setVal('petNames', inv.petNames);
             setVal('servicePeriod', inv.servicePeriod || '');
+            setVal('paymentNotes', inv.paymentNotes || '');
 
             const statusSelect = document.getElementById('invoiceStatusSelect');
             if (statusSelect) statusSelect.value = inv.status || 'Pendiente';
+
+            const discountInput = document.getElementById('invoiceDiscountInput');
+            if (discountInput) discountInput.value = inv.discount || 0;
 
             renderWalksTable(inv.walks);
             calculateInvoiceTotals(inv);
@@ -457,11 +548,22 @@
 
             inv.status = newStatus;
             saveToStorage();
-            renderInvoiceList();
+            handleSearchAndFilter();
             showToast(`Factura marcada como ${newStatus}`);
         }
 
-        // 6. RENDERIZAR Y CALCULAR TABLA DE PASEOS
+        // 6. AJUSTAR DESCUENTO
+        function updateDiscount(val) {
+            const inv = invoices.find(i => i.id === activeInvoiceId);
+            if (!inv) return;
+
+            inv.discount = Number(val) || 0;
+            saveToStorage();
+            calculateInvoiceTotals(inv);
+            handleSearchAndFilter();
+        }
+
+        // 7. RENDERIZAR Y CALCULAR TABLA DE PASEOS
         function renderWalksTable(walks) {
             const tbody = document.getElementById('walkItemsTable');
             if (!tbody) return;
@@ -489,13 +591,25 @@
             const total = Math.max(0, subtotal - discount);
 
             const totalCountEl = document.getElementById('totalCount');
+            const subtotalAmountEl = document.getElementById('subtotalAmount');
+            const discountAmountEl = document.getElementById('discountAmount');
+            const discountRowEl = document.getElementById('discountRow');
             const totalAmountEl = document.getElementById('totalAmount');
 
             if (totalCountEl) totalCountEl.innerText = inv.walks.length;
+            if (subtotalAmountEl) subtotalAmountEl.innerText = '$' + subtotal.toLocaleString('es-CO');
+            
+            if (discount > 0) {
+                if (discountRowEl) discountRowEl.classList.remove('hidden');
+                if (discountAmountEl) discountAmountEl.innerText = '-$' + discount.toLocaleString('es-CO');
+            } else {
+                if (discountRowEl) discountRowEl.classList.add('hidden');
+            }
+
             if (totalAmountEl) totalAmountEl.innerText = '$' + total.toLocaleString('es-CO');
         }
 
-        // 7. AGREGAR PASEO A FACTURA
+        // 8. AGREGAR PASEO A FACTURA
         function addWalkToInvoice(e) {
             e.preventDefault();
             const inv = invoices.find(i => i.id === activeInvoiceId);
@@ -517,14 +631,14 @@
             saveToStorage();
             renderWalksTable(inv.walks);
             calculateInvoiceTotals(inv);
-            renderInvoiceList();
+            handleSearchAndFilter();
 
             document.getElementById('walkPets').value = '';
             document.getElementById('walkNotes').value = '';
             showToast("Paseo agregado a la factura");
         }
 
-        // 8. ELIMINAR PASEO Y FACTURA
+        // 9. ELIMINAR PASEO Y FACTURA
         function removeWalk(index) {
             const inv = invoices.find(i => i.id === activeInvoiceId);
             if (!inv) return;
@@ -532,7 +646,7 @@
             saveToStorage();
             renderWalksTable(inv.walks);
             calculateInvoiceTotals(inv);
-            renderInvoiceList();
+            handleSearchAndFilter();
             showToast("Paseo eliminado");
         }
 
@@ -546,20 +660,21 @@
             invoices = invoices.filter(i => i.id !== activeInvoiceId);
             activeInvoiceId = invoices[0].id;
             saveToStorage();
-            renderInvoiceList();
+            handleSearchAndFilter();
             loadInvoice(activeInvoiceId);
             showToast("Factura eliminada");
         }
 
-        // 9. ENVIAR RESUMEN POR WHATSAPP
+        // 10. ENVIAR RESUMEN POR WHATSAPP
         function sendWhatsApp() {
             const inv = invoices.find(i => i.id === activeInvoiceId);
             if (!inv) return;
 
-            const total = inv.walks.reduce((sum, w) => sum + Number(w.price), 0) - (inv.discount || 0);
+            const subtotal = inv.walks.reduce((sum, w) => sum + Number(w.price), 0);
+            const total = Math.max(0, subtotal - (inv.discount || 0));
             const cleanPhone = (inv.clientPhone || '').replace(/\D/g, '');
 
-            const text = `¡Hola! 🐾 Te comparto la cuenta de cobro *${inv.number}* de los paseos de *${inv.petNames}*.\n\n` +
+            const text = `¡Hola! 🐾 Te comparto la cuenta de cobro *${inv.number}* de los paseos de *${inv.petNames.replace(/<[^>]*>?/gm, '')}*.\n\n` +
                          `🗓️ *Total Paseos:* ${inv.walks.length}\n` +
                          `💰 *Total a Pagar:* $${total.toLocaleString('es-CO')}\n\n` +
                          `¡Muchas gracias por confiar en nuestro servicio!`;
@@ -571,15 +686,19 @@
             window.open(url, '_blank');
         }
 
-        // 10. ACTUALIZAR ESTADÍSTICAS DEL DASHBOARD
+        // 11. ACTUALIZAR ESTADÍSTICAS DEL DASHBOARD
         function updateDashboardStats() {
             const totalBilled = invoices.reduce((sum, inv) => {
-                return sum + inv.walks.reduce((wSum, w) => wSum + Number(w.price), 0);
+                const sub = inv.walks.reduce((wSum, w) => wSum + Number(w.price), 0);
+                return sum + Math.max(0, sub - (inv.discount || 0));
             }, 0);
 
             const totalPaid = invoices
                 .filter(i => i.status === 'Pagada')
-                .reduce((sum, inv) => sum + inv.walks.reduce((wSum, w) => wSum + Number(w.price), 0), 0);
+                .reduce((sum, inv) => {
+                    const sub = inv.walks.reduce((wSum, w) => wSum + Number(w.price), 0);
+                    return sum + Math.max(0, sub - (inv.discount || 0));
+                }, 0);
 
             const totalPending = totalBilled - totalPaid;
 
@@ -592,7 +711,7 @@
             if (pendingEl) pendingEl.innerText = '$' + totalPending.toLocaleString('es-CO');
         }
 
-        // 11. EXPORTAR REPORTE CSV PARA EXCEL
+        // 12. EXPORTAR REPORTE CSV PARA EXCEL
         function exportToCSV() {
             let csvContent = "data:text/csv;charset=utf-8,Factura,Cliente,Mascota,Fecha Paseo,Detalle,Precio,Estado\n";
 
@@ -611,6 +730,52 @@
             link.click();
             document.body.removeChild(link);
             showToast("Reporte CSV descargado");
+        }
+
+        // 13. RESPALDO Y RESTAURACIÓN (JSON)
+        function exportBackup() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(invoices));
+            const link = document.createElement('a');
+            link.setAttribute("href", dataStr);
+            link.setAttribute("download", `backup_mascotas_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("Respaldo JSON descargado");
+        }
+
+        function triggerImportBackup() {
+            document.getElementById('importJsonInput').click();
+        }
+
+        function importBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (Array.isArray(imported)) {
+                        invoices = imported;
+                        activeInvoiceId = invoices.length > 0 ? invoices[0].id : null;
+                        saveToStorage();
+                        handleSearchAndFilter();
+                        if (activeInvoiceId) loadInvoice(activeInvoiceId);
+                        showToast("Respaldo importado con éxito");
+                    } else {
+                        alert("El archivo no tiene un formato válido de respaldo.");
+                    }
+                } catch (err) {
+                    alert("Error al procesar el archivo JSON: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 14. IMPRESIÓN NATIVA DE PANTALLA
+        function printInvoice() {
+            window.print();
         }
 
         // MANEJO DE LOGO Y TEMA DE COLOR
@@ -645,7 +810,7 @@
             if (header) header.style.backgroundColor = color;
         }
 
-        // 12. DESCARGAR PDF (OPTIMIZADO PARA MÓVILES)
+        // 15. DESCARGAR PDF (OPTIMIZADO PARA MÓVILES)
         function downloadPDF() {
             const element = document.getElementById('invoiceCanvas');
             const invNum = document.getElementById('invoiceNumber').innerText.trim() || 'FAC-001';
