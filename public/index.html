@@ -1,477 +1,376 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generador de Facturas de Paseos de Mascotas</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <style>
-        @media print {
-            .no-print { display: none !important; }
-            .print-only { display: block !important; }
-            body { background: white; padding: 0; }
-            .page-break { page-break-after: always; }
+<script>
+    // ESTADO DE LA APLICACIÓN
+    let invoices = JSON.parse(localStorage.getItem('petInvoices')) || [];
+    let activeInvoiceId = null;
+    let logoBase64 = localStorage.getItem('petLogo') || '';
+    let themeColor = localStorage.getItem('petTheme') || '#4f46e5';
+
+    // INICIALIZACIÓN
+    window.onload = () => {
+        const walkDateInput = document.getElementById('walkDate');
+        if (walkDateInput) walkDateInput.valueAsDate = new Date();
+        
+        if (logoBase64) applyLogo(logoBase64);
+        if (themeColor) updateThemeColor(themeColor, false);
+
+        if (invoices.length === 0) {
+            createNewInvoice("Natalia Gómez", "Milo");
+        } else {
+            activeInvoiceId = invoices[0].id;
+            renderInvoiceList();
+            loadInvoice(activeInvoiceId);
         }
-        .invoice-preview {
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-        }
-    </style>
-</head>
-<body class="bg-slate-100 min-h-screen text-slate-800 font-sans pb-12">
+        updateDashboardStats();
+    };
 
-    <!-- Header / Navbar -->
-    <header class="bg-indigo-700 text-white shadow-lg no-print">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-4">
-            <div class="flex items-center gap-3">
-                <span class="text-3xl">🐾</span>
-                <div>
-                    <h1 class="text-xl font-bold leading-tight">Sistema de Facturación Mascotas</h1>
-                    <p class="text-xs text-indigo-200">Gestión de paseos y cobro diario</p>
-                </div>
-            </div>
-            <div class="flex gap-2">
-                <button onclick="createNewInvoice()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1 shadow">
-                    ➕ Nueva Factura
-                </button>
-            </div>
-        </div>
-    </header>
+    // GUARDAR EN LOCALSTORAGE
+    function saveToStorage() {
+        localStorage.setItem('petInvoices', JSON.stringify(invoices));
+        updateDashboardStats();
+    }
 
-    <main class="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    // 1. CREAR NUEVA FACTURA
+    function createNewInvoice(defaultClient = 'Nuevo Cliente', defaultPet = 'Mascota') {
+        const newId = 'FAC-' + String(Date.now()).slice(-4);
+        const todayStr = new Date().toLocaleDateString('es-CO');
 
-        <!-- Sidebar: Panel de Control & Lista de Facturas -->
-        <aside class="lg:col-span-4 space-y-6 no-print">
-            
-            <!-- Lista de Facturas -->
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                <h2 class="text-lg font-bold text-slate-800 mb-3 flex items-center justify-between">
-                    <span>📑 Facturas Creadas</span>
-                    <span id="invoiceCount" class="text-xs bg-indigo-100 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full">0</span>
-                </h2>
-                <div id="invoiceList" class="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    <!-- Se llena dinámicamente -->
-                </div>
-            </div>
-
-            <!-- Registro Diario de Paseo -->
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                <h2 class="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
-                    <span>🗓️ Reg. Paseo Diario</span>
-                </h2>
-                <p class="text-xs text-slate-500 mb-4">Marca los perros y la fecha para agregarlos rápido a la factura activa.</p>
-
-                <form id="dailyWalkForm" onsubmit="addWalkToInvoice(event)" class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha del Paseo</label>
-                        <input type="date" id="walkDate" required class="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Mascota(s) Paseada(s)</label>
-                        <input type="text" id="walkPets" placeholder="Ej: Milo, Luna" required class="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-600 mb-1">Precio / Paseo ($)</label>
-                            <input type="number" id="walkPrice" placeholder="15000" required class="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-600 mb-1">Duración/Tipo</label>
-                            <input type="text" id="walkNotes" placeholder="Ej: 1 Hora / Individual" class="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                        </div>
-                    </div>
-
-                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg text-sm transition shadow flex items-center justify-center gap-2">
-                        <span>➕ Agregar Paseo a la Factura</span>
-                    </button>
-                </form>
-            </div>
-
-            <!-- Ajustes Generales / Marca -->
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                <h2 class="text-lg font-bold text-slate-800 mb-3">🎨 Personalización Marca</h2>
-                <div class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Logo del Negocio</label>
-                        <input type="file" id="logoUpload" accept="image/*" onchange="handleLogoUpload(event)" class="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Color Principal Tema</label>
-                        <div class="flex items-center gap-3">
-                            <input type="color" id="primaryColor" value="#4f46e5" onchange="updateThemeColor(this.value)" class="h-8 w-14 rounded cursor-pointer border-0">
-                            <span class="text-xs text-slate-500">Haz clic para cambiar tono de la factura</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main Content: Vista Previa y Edición de Factura -->
-        <section class="lg:col-span-8 space-y-4">
-
-            <!-- Toolbar Superior de la Factura -->
-            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-3 no-print">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Factura Activa:</span>
-                    <span id="activeInvoiceName" class="font-bold text-slate-700">#FAC-001</span>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="downloadPDF()" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 shadow">
-                        <span>📥 Descargar PDF</span>
-                    </button>
-                    <button onclick="deleteCurrentInvoice()" class="bg-slate-200 hover:bg-rose-100 hover:text-rose-600 text-slate-600 px-3 py-2 rounded-lg text-sm transition">
-                        🗑️ Eliminar
-                    </button>
-                </div>
-            </div>
-
-            <!-- Plantilla / Lienzo de la Factura (Print & Export Area) -->
-            <div id="invoiceCanvas" class="invoice-preview bg-white rounded-2xl p-8 sm:p-10 border border-slate-200 min-h-[800px] text-slate-700 flex flex-col justify-between">
-                
-                <div>
-                    <!-- Encabezado Factura -->
-                    <div class="flex flex-wrap justify-between items-start gap-6 border-b pb-8">
-                        <div class="flex items-center gap-4">
-                            <div id="logoContainer" class="w-20 h-20 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400 text-2xl overflow-hidden relative group">
-                                <img id="invoiceLogo" src="" class="w-full h-full object-contain hidden" alt="Logo">
-                                <span id="logoPlaceholder">🐾 Logo</span>
-                            </div>
-                            <div>
-                                <h1 contenteditable="true" id="companyName" class="text-2xl font-black text-indigo-700 outline-none hover:bg-indigo-50/50 p-1 rounded">MASCOTAS CLUB</h1>
-                                <p contenteditable="true" id="companyTagline" class="text-xs text-slate-500 outline-none hover:bg-slate-100 p-1 rounded">Servicio Profesional de Paseos y Cuidado</p>
-                                <p contenteditable="true" id="companyContact" class="text-xs text-slate-500 outline-none hover:bg-slate-100 p-1 rounded">Tel: +57 300 123 4567 | Medellín, Colombia</p>
-                            </div>
-                        </div>
-
-                        <div class="text-right">
-                            <div class="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
-                                Factura de Servicio
-                            </div>
-                            <h2 class="text-xl font-black text-slate-800">
-                                Nº <span contenteditable="true" id="invoiceNumber" class="outline-none hover:bg-slate-100 px-1 rounded">FAC-001</span>
-                            </h2>
-                            <p class="text-xs text-slate-500 mt-1">
-                                Fecha Emisión: <span contenteditable="true" id="invoiceDate" class="font-medium outline-none hover:bg-slate-100 px-1 rounded">05/10/2026</span>
-                            </p>
-                        </div>
-                    </div>
-
-                    <!-- Datos del Cliente y Perro -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 my-8 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                        <div>
-                            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Facturar a:</span>
-                            <div contenteditable="true" id="clientName" class="font-bold text-slate-800 text-base outline-none hover:bg-white p-1 rounded">Natalia Gómez</div>
-                            <div contenteditable="true" id="clientPhone" class="text-xs text-slate-500 outline-none hover:bg-white p-1 rounded">Tel: +57 310 987 6543</div>
-                        </div>
-                        <div>
-                            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Mascota(s) Registrada(s):</span>
-                            <div contenteditable="true" id="petNames" class="font-bold text-indigo-600 text-base outline-none hover:bg-white p-1 rounded">🐶 Milo</div>
-                            <div contenteditable="true" id="servicePeriod" class="text-xs text-slate-500 outline-none hover:bg-white p-1 rounded">Periodo: Octubre 2026</div>
-                        </div>
-                    </div>
-
-                    <!-- Tabla de Detalle de Paseos -->
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm">
-                            <thead>
-                                <tr id="tableHeader" class="bg-indigo-600 text-white rounded-lg">
-                                    <th class="p-3 rounded-l-lg font-semibold">Fecha</th>
-                                    <th class="p-3 font-semibold">Mascota(s)</th>
-                                    <th class="p-3 font-semibold">Detalle / Duración</th>
-                                    <th class="p-3 text-right font-semibold">Precio</th>
-                                    <th class="p-3 text-center no-print w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="walkItemsTable" class="divide-y divide-slate-100">
-                                <!-- Filas agregadas dinámicamente -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Totales y Pago -->
-                <div class="mt-8 border-t pt-6">
-                    <div class="flex flex-wrap justify-between items-start gap-6">
-                        <div class="max-w-xs">
-                            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Métodos de Pago / Notas:</span>
-                            <div contenteditable="true" id="paymentNotes" class="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 outline-none hover:bg-slate-100">
-                                <strong>Nequi / Bancolombia:</strong> 300 123 4567<br>
-                                ¡Muchas gracias por confiar en el cuidado de tus peluditos! 🐾
-                            </div>
-                        </div>
-
-                        <div class="w-full sm:w-64 space-y-2">
-                            <div class="flex justify-between text-sm text-slate-600">
-                                <span>Total Paseos:</span>
-                                <span id="totalCount" class="font-semibold">0</span>
-                            </div>
-                            <div class="flex justify-between text-lg font-black text-slate-800 pt-2 border-t">
-                                <span>Total a Pagar:</span>
-                                <span id="totalAmount" class="text-indigo-600">$0</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </section>
-
-    </main>
-
-    <!-- Script principal de lógica de la app -->
-    <script>
-        // Estado de la aplicación
-        let invoices = JSON.parse(localStorage.getItem('petInvoices')) || [];
-        let activeInvoiceId = null;
-        let logoBase64 = localStorage.getItem('petLogo') || '';
-        let themeColor = localStorage.getItem('petTheme') || '#4f46e5';
-
-        // Inicialización
-        window.onload = () => {
-            // Establecer fecha actual por defecto en el input
-            document.getElementById('walkDate').valueAsDate = new Date();
-            
-            if (logoBase64) {
-                applyLogo(logoBase64);
-            }
-            if (themeColor) {
-                updateThemeColor(themeColor, false);
-            }
-
-            if (invoices.length === 0) {
-                createNewInvoice("Natalia Gómez", "Milo");
-            } else {
-                activeInvoiceId = invoices[0].id;
-                renderInvoiceList();
-                loadInvoice(activeInvoiceId);
-            }
+        const newInvoice = {
+            id: newId,
+            number: newId,
+            date: todayStr,
+            status: 'Pendiente', // 'Pendiente' o 'Pagada'
+            discount: 0,
+            clientName: defaultClient,
+            clientPhone: "3000000000",
+            petNames: defaultPet,
+            servicePeriod: "Periodo: " + new Date().toLocaleString('es-CO', { month: 'long', year: 'numeric' }),
+            walks: [
+                { id: Date.now(), date: todayStr, pets: defaultPet, notes: "1 Hora Paseo Individual", price: 15000 }
+            ]
         };
 
-        // Crear una nueva factura
-        function createNewInvoice(defaultClient = 'Nuevo Cliente', defaultPet = 'Mascota') {
-            const newId = 'FAC-' + String(Date.now()).slice(-4);
-            const todayStr = new Date().toLocaleDateString('es-CO');
+        invoices.unshift(newInvoice);
+        activeInvoiceId = newInvoice.id;
+        saveToStorage();
+        renderInvoiceList();
+        loadInvoice(activeInvoiceId);
+        showToast("Nueva factura creada");
+    }
 
-            const newInvoice = {
-                id: newId,
-                number: newId,
-                date: todayStr,
-                clientName: defaultClient,
-                clientPhone: "Tel: +57 300 000 0000",
-                petNames: defaultPet,
-                servicePeriod: "Periodo: " + new Date().toLocaleString('es-CO', { month: 'long', year: 'numeric' }),
-                walks: [
-                    { id: Date.now(), date: todayStr, pets: defaultPet, notes: "1 Hora Paseo Individual", price: 15000 }
-                ]
-            };
+    // 2. DUPLICAR FACTURA
+    function duplicateCurrentInvoice() {
+        const current = invoices.find(i => i.id === activeInvoiceId);
+        if (!current) return;
 
-            invoices.unshift(newInvoice);
-            activeInvoiceId = newInvoice.id;
-            saveToStorage();
-            renderInvoiceList();
-            loadInvoice(activeInvoiceId);
-        }
+        const newId = 'FAC-' + String(Date.now()).slice(-4);
+        const todayStr = new Date().toLocaleDateString('es-CO');
 
-        // Renderizar lista lateral de facturas
-        function renderInvoiceList() {
-            const listEl = document.getElementById('invoiceList');
-            document.getElementById('invoiceCount').innerText = invoices.length;
-            listEl.innerHTML = '';
+        const duplicated = JSON.parse(JSON.stringify(current));
+        duplicated.id = newId;
+        duplicated.number = newId;
+        duplicated.date = todayStr;
+        duplicated.status = 'Pendiente';
 
-            invoices.forEach(inv => {
-                const total = inv.walks.reduce((sum, w) => sum + Number(w.price), 0);
-                const isActive = inv.id === activeInvoiceId;
+        invoices.unshift(duplicated);
+        activeInvoiceId = duplicated.id;
+        saveToStorage();
+        renderInvoiceList();
+        loadInvoice(activeInvoiceId);
+        showToast(`Factura duplicada como ${newId}`);
+    }
 
-                const item = document.createElement('div');
-                item.className = `p-3 rounded-xl border cursor-pointer transition flex justify-between items-center ${
-                    isActive ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-white border-slate-100 hover:bg-slate-50'
-                }`;
-                item.onclick = () => {
-                    activeInvoiceId = inv.id;
-                    renderInvoiceList();
-                    loadInvoice(inv.id);
-                };
+    // 3. RENDERIZAR LISTA DE FACTURAS Y BÚSQUEDA
+    function renderInvoiceList(searchTerm = '', statusFilter = 'ALL') {
+        const listEl = document.getElementById('invoiceList');
+        if (!listEl) return;
+        
+        listEl.innerHTML = '';
 
-                item.innerHTML = `
-                    <div>
-                        <div class="font-bold text-sm text-slate-800">${inv.number} - ${inv.clientName}</div>
-                        <div class="text-xs text-slate-400">${inv.walks.length} paseos · $${total.toLocaleString('es-CO')}</div>
-                    </div>
-                    <span class="text-xs font-bold ${isActive ? 'text-indigo-600' : 'text-slate-300'}">●</span>
-                `;
-                listEl.appendChild(item);
-            });
-        }
-
-        // Cargar datos de la factura activa al DOM
-        function loadInvoice(id) {
-            const inv = invoices.find(i => i.id === id);
-            if (!inv) return;
-
-            document.getElementById('activeInvoiceName').innerText = inv.number;
-            document.getElementById('invoiceNumber').innerText = inv.number;
-            document.getElementById('invoiceDate').innerText = inv.date;
-            document.getElementById('clientName').innerText = inv.clientName;
-            document.getElementById('clientPhone').innerText = inv.clientPhone || 'Tel: +57 300 000 0000';
-            document.getElementById('petNames').innerText = inv.petNames;
-            document.getElementById('servicePeriod').innerText = inv.servicePeriod || 'Periodo Activo';
-
-            renderWalksTable(inv.walks);
-        }
-
-        // Renderizar filas de la tabla de paseos
-        function renderWalksTable(walks) {
-            const tbody = document.getElementById('walkItemsTable');
-            tbody.innerHTML = '';
-
-            let totalSum = 0;
-
-            walks.forEach((walk, index) => {
-                totalSum += Number(walk.price);
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-50/80 transition";
-                tr.innerHTML = `
-                    <td class="p-3 font-medium text-slate-700">${walk.date}</td>
-                    <td class="p-3 text-slate-600 font-semibold">${walk.pets}</td>
-                    <td class="p-3 text-slate-500">${walk.notes || 'Paseo Recreativo'}</td>
-                    <td class="p-3 text-right font-bold text-slate-800">$${Number(walk.price).toLocaleString('es-CO')}</td>
-                    <td class="p-3 text-center no-print">
-                        <button onclick="removeWalk(${index})" class="text-slate-300 hover:text-rose-600 font-bold text-base px-1">✕</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            document.getElementById('totalCount').innerText = walks.length;
-            document.getElementById('totalAmount').innerText = '$' + totalSum.toLocaleString('es-CO');
-        }
-
-        // Agregar nuevo paseo desde el formulario lateral
-        function addWalkToInvoice(e) {
-            e.preventDefault();
-            const inv = invoices.find(i => i.id === activeInvoiceId);
-            if (!inv) return;
-
-            const rawDate = document.getElementById('walkDate').value;
-            const dateParts = rawDate.split('-');
-            const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : rawDate;
-
-            const newWalk = {
-                id: Date.now(),
-                date: formattedDate,
-                pets: document.getElementById('walkPets').value,
-                price: Number(document.getElementById('walkPrice').value),
-                notes: document.getElementById('walkNotes').value
-            };
-
-            inv.walks.push(newWalk);
-            saveToStorage();
-            loadInvoice(activeInvoiceId);
-            renderInvoiceList();
-
-            // Limpiar campos ligeros
-            document.getElementById('walkNotes').value = '';
-        }
-
-        // Eliminar paseo de la factura
-        function removeWalk(index) {
-            const inv = invoices.find(i => i.id === activeInvoiceId);
-            if (!inv) return;
-
-            inv.walks.splice(index, 1);
-            saveToStorage();
-            loadInvoice(activeInvoiceId);
-            renderInvoiceList();
-        }
-
-        // Eliminar factura completa
-        function deleteCurrentInvoice() {
-            if (invoices.length <= 1) {
-                alert("Debes conservar al menos una factura.");
-                return;
-            }
-
-            if (confirm("¿Estás seguro de eliminar esta factura?")) {
-                invoices = invoices.filter(i => i.id !== activeInvoiceId);
-                activeInvoiceId = invoices[0].id;
-                saveToStorage();
-                renderInvoiceList();
-                loadInvoice(activeInvoiceId);
-            }
-        }
-
-        // Manejo de carga de Logo
-        function handleLogoUpload(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(evt) {
-                    logoBase64 = evt.target.result;
-                    localStorage.setItem('petLogo', logoBase64);
-                    applyLogo(logoBase64);
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-
-        function applyLogo(src) {
-            const img = document.getElementById('invoiceLogo');
-            const placeholder = document.getElementById('logoPlaceholder');
-            img.src = src;
-            img.classList.remove('hidden');
-            placeholder.classList.add('hidden');
-        }
-
-        // Personalización de color
-        function updateThemeColor(color, save = true) {
-            themeColor = color;
-            if (save) localStorage.setItem('petTheme', color);
-
-            document.getElementById('tableHeader').style.backgroundColor = color;
-            document.getElementById('companyName').style.color = color;
-            document.getElementById('totalAmount').style.color = color;
-        }
-
-        // Guardar todo en localStorage
-        function saveToStorage() {
-            // Sincronizar datos editables directamente de la vista
-            const inv = invoices.find(i => i.id === activeInvoiceId);
-            if (inv) {
-                inv.number = document.getElementById('invoiceNumber').innerText;
-                inv.date = document.getElementById('invoiceDate').innerText;
-                inv.clientName = document.getElementById('clientName').innerText;
-                inv.clientPhone = document.getElementById('clientPhone').innerText;
-                inv.petNames = document.getElementById('petNames').innerText;
-                inv.servicePeriod = document.getElementById('servicePeriod').innerText;
-            }
-            localStorage.setItem('petInvoices', JSON.stringify(invoices));
-        }
-
-        // Auto-guardado al editar en campos con contenteditable
-        document.addEventListener('input', (e) => {
-            if (e.target.isContentEditable) {
-                saveToStorage();
-            }
+        const filtered = invoices.filter(inv => {
+            const matchesSearch = inv.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                  inv.number.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
+            return matchesSearch && matchesStatus;
         });
 
-        // Generación y Descarga de PDF Estético
-        function downloadPDF() {
-            const element = document.getElementById('invoiceCanvas');
-            const invNumber = document.getElementById('invoiceNumber').innerText.trim();
-            const clientName = document.getElementById('clientName').innerText.trim();
+        document.getElementById('invoiceCount').innerText = filtered.length;
 
-            const opt = {
-                margin:       [0.3, 0.3, 0.3, 0.3],
-                filename:     `Factura_Paseos_${invNumber}_${clientName.replace(/\s+/g, '_')}.pdf`,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, logging: false },
-                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        filtered.forEach(inv => {
+            const subtotal = inv.walks.reduce((sum, w) => sum + Number(w.price), 0);
+            const total = subtotal - (inv.discount || 0);
+            const isActive = inv.id === activeInvoiceId;
+            const isPaid = inv.status === 'Pagada';
+
+            const item = document.createElement('div');
+            item.className = `p-3 rounded-xl border cursor-pointer transition flex justify-between items-center ${
+                isActive ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-white border-slate-100 hover:bg-slate-50'
+            }`;
+            item.onclick = () => {
+                activeInvoiceId = inv.id;
+                renderInvoiceList(searchTerm, statusFilter);
+                loadInvoice(inv.id);
             };
 
-            html2pdf().set(opt).from(element).save();
+            item.innerHTML = `
+                <div>
+                    <div class="font-bold text-xs text-slate-800">${inv.number} - ${inv.clientName}</div>
+                    <div class="text-[11px] text-slate-400">${inv.walks.length} paseos · $${total.toLocaleString('es-CO')}</div>
+                </div>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                }">
+                    ${inv.status || 'Pendiente'}
+                </span>
+            `;
+            listEl.appendChild(item);
+        });
+    }
+
+    // 4. CARGAR FACTURA ACTIVA AL DOM
+    function loadInvoice(id) {
+        const inv = invoices.find(i => i.id === id);
+        if (!inv) return;
+
+        const setVal = (elemId, val) => {
+            const el = document.getElementById(elemId);
+            if (el) el.innerText = val;
+        };
+
+        setVal('activeInvoiceName', inv.number);
+        setVal('invoiceNumber', inv.number);
+        setVal('invoiceDate', inv.date);
+        setVal('clientName', inv.clientName);
+        setVal('clientPhone', inv.clientPhone || '');
+        setVal('petNames', inv.petNames);
+        setVal('servicePeriod', inv.servicePeriod || '');
+
+        // Actualizar selector de estado si existe en la UI
+        const statusSelect = document.getElementById('invoiceStatusSelect');
+        if (statusSelect) statusSelect.value = inv.status || 'Pendiente';
+
+        renderWalksTable(inv.walks);
+        calculateInvoiceTotals(inv);
+    }
+
+    // 5. CAMBIAR ESTADO DE LA FACTURA (PAGADA / PENDIENTE)
+    function toggleInvoiceStatus(newStatus) {
+        const inv = invoices.find(i => i.id === activeInvoiceId);
+        if (!inv) return;
+
+        inv.status = newStatus;
+        saveToStorage();
+        renderInvoiceList();
+        showToast(`Factura marcada como ${newStatus}`);
+    }
+
+    // 6. RENDERIZAR Y CALCULAR TABLA Y TOTALES
+    function renderWalksTable(walks) {
+        const tbody = document.getElementById('walkItemsTable');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        walks.forEach((walk, index) => {
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50/80 transition";
+            tr.innerHTML = `
+                <td class="p-3 font-medium text-slate-700">${walk.date}</td>
+                <td class="p-3 text-slate-600 font-semibold">${walk.pets}</td>
+                <td class="p-3 text-slate-500">${walk.notes || 'Paseo Recreativo'}</td>
+                <td class="p-3 text-right font-bold text-slate-800">$${Number(walk.price).toLocaleString('es-CO')}</td>
+                <td class="p-3 text-center no-print">
+                    <button onclick="removeWalk(${index})" class="text-slate-300 hover:text-rose-600 font-bold text-base px-1">✕</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function calculateInvoiceTotals(inv) {
+        const subtotal = inv.walks.reduce((sum, w) => sum + Number(w.price), 0);
+        const discount = Number(inv.discount || 0);
+        const total = Math.max(0, subtotal - discount);
+
+        const totalCountEl = document.getElementById('totalCount');
+        const totalAmountEl = document.getElementById('totalAmount');
+
+        if (totalCountEl) totalCountEl.innerText = inv.walks.length;
+        if (totalAmountEl) totalAmountEl.innerText = '$' + total.toLocaleString('es-CO');
+    }
+
+    // 7. AGREGAR PASEO
+    function addWalkToInvoice(e) {
+        e.preventDefault();
+        const inv = invoices.find(i => i.id === activeInvoiceId);
+        if (!inv) return;
+
+        const dateVal = document.getElementById('walkDate').value;
+        const [year, month, day] = dateVal.split('-');
+        const formattedDate = `${day}/${month}/${year}`;
+
+        const newWalk = {
+            id: Date.now(),
+            date: formattedDate,
+            pets: document.getElementById('walkPets').value,
+            price: Number(document.getElementById('walkPrice').value),
+            notes: document.getElementById('walkNotes').value
+        };
+
+        inv.walks.push(newWalk);
+        saveToStorage();
+        renderWalksTable(inv.walks);
+        calculateInvoiceTotals(inv);
+        renderInvoiceList();
+
+        document.getElementById('walkPets').value = '';
+        document.getElementById('walkNotes').value = '';
+        showToast("Paseo agregado a la factura");
+    }
+
+    // 8. ELIMINAR PASEO Y FACTURA
+    function removeWalk(index) {
+        const inv = invoices.find(i => i.id === activeInvoiceId);
+        if (!inv) return;
+        inv.walks.splice(index, 1);
+        saveToStorage();
+        renderWalksTable(inv.walks);
+        calculateInvoiceTotals(inv);
+        renderInvoiceList();
+        showToast("Paseo eliminado");
+    }
+
+    function deleteCurrentInvoice() {
+        if (invoices.length <= 1) {
+            alert("Debes mantener al menos una factura en la lista.");
+            return;
         }
-    </script>
-</body>
-</html>
+        if (!confirm("¿Seguro que deseas eliminar esta factura?")) return;
+
+        invoices = invoices.filter(i => i.id !== activeInvoiceId);
+        activeInvoiceId = invoices[0].id;
+        saveToStorage();
+        renderInvoiceList();
+        loadInvoice(activeInvoiceId);
+        showToast("Factura eliminada");
+    }
+
+    // 9. ENVIAR RESUMEN POR WHATSAPP
+    function sendWhatsApp() {
+        const inv = invoices.find(i => i.id === activeInvoiceId);
+        if (!inv) return;
+
+        const total = inv.walks.reduce((sum, w) => sum + Number(w.price), 0) - (inv.discount || 0);
+        const cleanPhone = (inv.clientPhone || '').replace(/\D/g, '');
+
+        const text = `¡Hola! 🐾 Te comparto la cuenta de cobro *${inv.number}* de los paseos de *${inv.petNames}*.\n\n` +
+                     `🗓️ *Total Paseos:* ${inv.walks.length}\n` +
+                     `💰 *Total a Pagar:* $${total.toLocaleString('es-CO')}\n\n` +
+                     `¡Muchas gracias por confiar en nuestro servicio!`;
+
+        const url = cleanPhone 
+            ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+            : `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+        window.open(url, '_blank');
+    }
+
+    // 10. ESTADÍSTICAS DEL DASHBOARD
+    function updateDashboardStats() {
+        const totalBilled = invoices.reduce((sum, inv) => {
+            return sum + inv.walks.reduce((wSum, w) => wSum + Number(w.price), 0);
+        }, 0);
+
+        const totalPaid = invoices
+            .filter(i => i.status === 'Pagada')
+            .reduce((sum, inv) => sum + inv.walks.reduce((wSum, w) => wSum + Number(w.price), 0), 0);
+
+        const totalPending = totalBilled - totalPaid;
+
+        const billedEl = document.getElementById('statTotalBilled');
+        const paidEl = document.getElementById('statTotalPaid');
+        const pendingEl = document.getElementById('statTotalPending');
+
+        if (billedEl) billedEl.innerText = '$' + totalBilled.toLocaleString('es-CO');
+        if (paidEl) paidEl.innerText = '$' + totalPaid.toLocaleString('es-CO');
+        if (pendingEl) pendingEl.innerText = '$' + totalPending.toLocaleString('es-CO');
+    }
+
+    // 11. EXPORTAR BÚSQUEDA / DATOS A EXCEL (CSV)
+    function exportToCSV() {
+        let csvContent = "data:text/csv;charset=utf-8,Factura,Cliente,Mascota,Fecha Paseo,Detalle,Precio,Estado\n";
+
+        invoices.forEach(inv => {
+            inv.walks.forEach(w => {
+                const row = `"${inv.number}","${inv.clientName}","${w.pets}","${w.date}","${w.notes || ''}",${w.price},"${inv.status}"`;
+                csvContent += row + "\n";
+            });
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `reporte_paseos_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast("Reporte CSV descargado");
+    }
+
+    // MANEJO DE LOGO Y TEMA
+    function handleLogoUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            logoBase64 = e.target.result;
+            localStorage.setItem('petLogo', logoBase64);
+            applyLogo(logoBase64);
+            showToast("Logo actualizado");
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function applyLogo(src) {
+        const logoImg = document.getElementById('invoiceLogo');
+        const placeholder = document.getElementById('logoPlaceholder');
+        if (logoImg && placeholder) {
+            logoImg.src = src;
+            logoImg.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+        }
+    }
+
+    function updateThemeColor(color, save = true) {
+        themeColor = color;
+        if (save) localStorage.setItem('petTheme', color);
+        const header = document.getElementById('tableHeader');
+        if (header) header.style.backgroundColor = color;
+    }
+
+    // DESCARGAR PDF CORREGIDO PARA MÓVILES
+    function downloadPDF() {
+        const element = document.getElementById('invoiceCanvas');
+        const invNum = document.getElementById('invoiceNumber').innerText.trim() || 'FAC-001';
+        const client = document.getElementById('clientName').innerText.trim() || 'Cliente';
+
+        showToast("Generando PDF...", "info");
+
+        const opt = {
+            margin:       [8, 8, 8, 8],
+            filename:     `Factura_${invNum}_${client.replace(/\s+/g, '_')}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { 
+                scale: 2, 
+                useCORS: true, 
+                scrollX: 0, 
+                scrollY: 0,
+                windowWidth: element.scrollWidth
+            },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        html2pdf().set(opt).from(element).save().then(() => {
+            showToast("PDF descargado correctamente");
+        });
+    }
+</script>
